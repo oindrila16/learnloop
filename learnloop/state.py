@@ -1,8 +1,14 @@
 """Session-specific quiz state and server-side event handlers."""
 
 import reflex as rx
+import logging
+from uuid import UUID, uuid4
+from sqlalchemy.exc import SQLAlchemyError
 
-from .questions import BANK, SUBJECTS, grade
+from .questions import BANK, SUBJECTS
+from .database import get_attempt, history, save_attempt, summary
+
+logger = logging.getLogger(__name__)
 
 
 class QuizState(rx.State):
@@ -11,6 +17,7 @@ class QuizState(rx.State):
     _answers: dict[str, str] = {}
     _position: int = 0
     _stage: str = "home"
+    _attempt_id: str = ""
 
     stage: str = "home"
     subject_name: str = ""
@@ -22,8 +29,16 @@ class QuizState(rx.State):
     total: int = 10
     answered: int = 0
     score: int = 0
-    percentage: int = 0
+    percentage: float = 0
     review: list[dict[str, str]] = []
+    error: str = ""
+    saved_date: str = ""
+    history_items: list[dict[str, str]] = []
+    subject_summaries: list[dict[str, str]] = []
+    completed: int = 0
+    average: str = ""
+    best: str = ""
+    latest: str = ""
 
     def _set_stage(self, stage: str):
         self._stage = stage
@@ -40,6 +55,7 @@ class QuizState(rx.State):
 
     @rx.event
     def home(self):
+        self._attempt_id = ""
         self._subject_id = ""
         self._answers = {}
         self._position = 0
@@ -53,6 +69,14 @@ class QuizState(rx.State):
         self.score = 0
         self.percentage = 0
         self.review = []
+        self.error = ""
+        self.saved_date = ""
+        self.history_items = []
+        self.subject_summaries = []
+        self.completed = 0
+        self.average = ""
+        self.best = ""
+        self.latest = ""
         self._set_stage("home")
 
     @rx.event
@@ -69,10 +93,14 @@ class QuizState(rx.State):
         if self._stage not in ("intro", "results") or self._subject_id not in BANK:
             return
         self._answers = {}
+        self._attempt_id = str(uuid4())
         self._position = 0
         self.score = 0
         self.percentage = 0
         self.review = []
+        self.error = ""
+        self.saved_date = ""
+        self.total = len(BANK[self._subject_id])
         self._set_stage("quiz")
         self._show_question()
 
@@ -106,12 +134,71 @@ class QuizState(rx.State):
     @rx.event
     def cancel_submit(self):
         if self._stage == "confirm":
+            self.error = ""
             self._set_stage("quiz")
+
+    def _apply_result(self, saved: dict):
+        self.subject_name = saved["subject_name"]
+        self.score = saved["score"]
+        self.total = saved["total"]
+        self.percentage = saved["percentage"]
+        self.review = saved["review"]
+        self.saved_date = saved["date"]
+        self.error = ""
+        self._set_stage("results")
 
     @rx.event
     def submit(self):
         if self._stage != "confirm" or self._subject_id not in BANK:
             return
-        self.score, self.review = grade(self._subject_id, self._answers)
-        self.percentage = self.score * 100 // len(BANK[self._subject_id])
-        self._set_stage("results")
+        try:
+            saved = save_attempt(self._attempt_id, self._subject_id, self._answers)
+        except (SQLAlchemyError, OSError, RuntimeError):
+            logger.exception("Could not save quiz attempt")
+            self.error = "Your attempt could not be saved. Your answers are still here. Check that the database is initialized and writable, then retry Submit quiz."
+            return
+        self._apply_result(saved)
+
+    @rx.event
+    def load_progress(self):
+        self.home()
+        self._set_stage("progress")
+        try:
+            attempts = history()
+            totals = summary(attempts)
+        except (SQLAlchemyError, OSError):
+            logger.exception("Could not load quiz history")
+            self.error = "Could not load your history. Check that the database is initialized and readable, then try again."
+            return
+        self.completed = totals["count"]
+        if attempts:
+            self.average = f"{totals['average']:.1f}%"
+            self.best = f"{totals['best']:.1f}%"
+            self.latest = totals["latest"]
+        self.subject_summaries = [
+            {key: str(value) for key, value in row.items()} for row in totals["subjects"]
+        ]
+        self.history_items = [
+            {"id": row["id"], "subject": row["subject_name"], "date": row["date"],
+             "score": f"{row['score']} / {row['total']}", "percentage": f"{row['percentage']:.1f}%"}
+            for row in attempts
+        ]
+
+    @rx.event
+    def view_saved(self, attempt_id: str):
+        try:
+            UUID(attempt_id)
+        except (ValueError, TypeError, AttributeError):
+            self.error = "That attempt could not be found."
+            return
+        try:
+            saved = get_attempt(attempt_id)
+        except (SQLAlchemyError, OSError):
+            logger.exception("Could not open saved attempt")
+            self.error = "Could not open this result. Please try again."
+            return
+        if saved is None:
+            self.error = "That attempt could not be found."
+            return
+        self._subject_id = saved["subject_id"]
+        self._apply_result(saved)

@@ -40,7 +40,7 @@ def intro() -> rx.Component:
         rx.heading(Q.subject_name, as_="h1", size="7"),
         rx.text("Ten beginner questions, with four options each. Choose one answer per question."),
         rx.text("Move back and forth to change your answers, or leave questions unanswered. Each correct answer earns one point. There is no negative marking."),
-        rx.text("Your score and explanations appear after you submit. Attempts are not saved yet."),
+        rx.text("Your score and explanations appear after you submit. Completed attempts are saved on this computer."),
         rx.button("Start Quiz", on_click=Q.start, size="3"),
         rx.button("Return home", on_click=Q.home, variant="soft"),
         spacing="5", align="start",
@@ -103,6 +103,7 @@ def review_card(item: rx.Var[dict[str, str]]) -> rx.Component:
             rx.heading(item["prompt"], as_="h2", size="4"),
             rx.text("Your answer: ", item["selected"]),
             rx.text("Correct answer: ", item["correct"], weight="bold"),
+            rx.text("Options: ", item["options"], size="2"),
             rx.text(item["explanation"], color=rx.color("gray", 11)),
             align="start", spacing="3",
         ),
@@ -114,11 +115,68 @@ def results() -> rx.Component:
     return rx.vstack(
         rx.heading(Q.subject_name, " results", as_="h1", size="7"),
         rx.text(Q.score, " out of ", Q.total, " correct · ", Q.percentage, "%", size="6", weight="bold"),
+        rx.text("Saved · ", Q.saved_date),
         rx.flex(
             rx.button("Return home", on_click=Q.home, variant="soft"),
             rx.button("Start a fresh attempt", on_click=Q.start), gap="16px", flex_wrap="wrap",
         ),
+        rx.button("View progress", on_click=Q.load_progress, variant="soft"),
         rx.foreach(Q.review, review_card),
+        spacing="5", align="start", width="100%",
+    )
+
+
+def history_card(item: rx.Var[dict[str, str]]) -> rx.Component:
+    return rx.card(
+        rx.vstack(
+            rx.heading(item["subject"], as_="h3", size="4"),
+            rx.text(item["score"], " correct · ", item["percentage"]),
+            rx.text(item["date"], size="2"),
+            rx.button("View Results", on_click=Q.view_saved(item["id"]), variant="soft"),
+            align="start", spacing="3",
+        ), width="100%", padding="20px",
+    )
+
+
+def subject_summary(item: rx.Var[dict[str, str]]) -> rx.Component:
+    return rx.card(
+        rx.vstack(
+            rx.heading(item["name"], as_="h3", size="4"),
+            rx.text("Completed: ", item["count"]),
+            rx.text("Average: ", item["average"]),
+            rx.text("Best: ", item["best"]),
+            align="start", spacing="3",
+        ), width="100%",
+    )
+
+
+def progress() -> rx.Component:
+    return rx.vstack(
+        rx.heading("Your progress", as_="h1", size="7"),
+        rx.text("Local single-user version · All completed quizzes on this computer."),
+        rx.cond(Q.error == "",
+            rx.cond(Q.completed == 0,
+                rx.text("No attempts yet. Complete a quiz to see your progress here."),
+                rx.vstack(
+                    rx.grid(
+                        rx.card(rx.text("Completed quizzes"), rx.heading(Q.completed, size="6")),
+                        rx.card(rx.text("Average percentage"), rx.heading(Q.average, size="6")),
+                        rx.card(rx.text("Best percentage"), rx.heading(Q.best, size="6")),
+                        columns=rx.breakpoints(initial="1", sm="3"), spacing="4", width="100%",
+                    ),
+                    rx.text("Latest attempt: ", Q.latest),
+                    rx.text("Average is the arithmetic mean of completed-attempt percentages.", size="2"),
+                    rx.heading("By subject", as_="h2", size="5"),
+                    rx.grid(rx.foreach(Q.subject_summaries, subject_summary), columns=rx.breakpoints(initial="1", sm="3"), spacing="4", width="100%"),
+                    rx.heading("Attempt history", as_="h2", size="5"),
+                    rx.text("Newest first · Dates shown in UTC", size="2"),
+                    rx.foreach(Q.history_items, history_card),
+                    spacing="5", align="start", width="100%",
+                ),
+            ),
+            rx.button("Retry loading history", on_click=Q.load_progress),
+        ),
+        rx.link("Return home", href="/"),
         spacing="5", align="start", width="100%",
     )
 
@@ -131,13 +189,18 @@ def index() -> rx.Component:
                     rx.icon("book-open", size=24, color=rx.color("indigo", 9)),
                     rx.text("LearnLoop", weight="bold", size="5"), align="center", spacing="3",
                 ),
+                rx.badge("Local single-user version", variant="soft", margin_y="12px"),
+                rx.hstack(rx.link("Home", href="/"), rx.link("Progress", href="/progress"), spacing="4"),
                 padding_y="24px", border_bottom="1px solid var(--gray-5)",
             ),
             rx.el.main(
+                rx.cond(Q.error != "", rx.el.p(Q.error, role="alert", color=rx.color("red", 11))),
                 rx.cond(Q.stage == "home", home(),
                     rx.cond(Q.stage == "intro", intro(),
                         rx.cond(Q.stage == "quiz", quiz(),
-                            rx.cond(Q.stage == "confirm", confirmation(), results()),
+                            rx.cond(Q.stage == "confirm", confirmation(),
+                                rx.cond(Q.stage == "progress", progress(), results()),
+                            ),
                         ),
                     ),
                 ),
@@ -152,3 +215,4 @@ def index() -> rx.Component:
 
 app = rx.App()
 app.add_page(index, route="/", on_load=Q.home, title="LearnLoop | Learn at your own pace", description="Practice Python, SQL, and Computer Fundamentals.")
+app.add_page(index, route="/progress", on_load=Q.load_progress, title="Progress | LearnLoop")

@@ -2,10 +2,14 @@
 
 import unittest
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from dataclasses import replace
 
 from learnloop.questions import BANK, SUBJECTS, grade, validate_bank
 from learnloop.state import QuizState
+from learnloop.database import initialize, make_engine
 
 
 class BankTests(unittest.TestCase):
@@ -47,6 +51,14 @@ class BankTests(unittest.TestCase):
 
 class FlowTests(unittest.TestCase):
     def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        db_engine = make_engine(Path(temporary.name) / "quiz.db")
+        self.addCleanup(db_engine.dispose)
+        initialize(db_engine)
+        engine_patch = patch("learnloop.database.engine", db_engine)
+        engine_patch.start()
+        self.addCleanup(engine_patch.stop)
         self.state = QuizState(_reflex_internal_init=True)
         self.state.choose_subject("python")
         self.state.start()

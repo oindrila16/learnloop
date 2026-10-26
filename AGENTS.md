@@ -12,3 +12,8 @@
 - Run relevant checks after each stage. Never claim a browser test passed unless it was actually performed.
 - Do not add accounts until a later requested stage.
 - Keep project writing natural, simple, and personal. The README should sound like the owner's own project notes, without inflated claims or invented experience.
+- This is a local single-user app: active quizzes are session-specific, but saved history is shared locally.
+- Initialize SQLite explicitly with `uv run python -m learnloop.database`. Never delete or recreate it automatically.
+- Save submissions and answer snapshots in one transaction; preserve the unique server-generated attempt ID when retrying failed saves.
+- Store submission timestamps in UTC and load historical reviews from saved snapshots, not the current question bank.
+- Persistence tests must use temporary databases and leave personal quiz history untouched.
