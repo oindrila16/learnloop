@@ -1,33 +1,49 @@
 # LearnLoop
 
-I'm building LearnLoop to practice Python and make a simple quiz app for Python,
-SQL, and Computer Fundamentals. I'm using Reflex for the interface and app logic.
+LearnLoop is a simple quiz app for Python, SQL and Computer Fundamentals.
+I'm building this project to practice Python and learn Reflex.
 
-Each subject has ten beginner questions. You can move between questions, change
-your answers, and leave questions unanswered. Before submitting, you'll see how
-many you skipped. Correct answers earn one point; wrong or missing answers earn
-zero. The results show your score and explain each answer.
+Each subject has 10 questions. You can go back, change your answers or skip a
+question. After submitting, you can see your score, the correct answers and a
+short explanation for each question.
 
-This is a **local single-user version**, with no accounts. Completed quizzes are
-saved in SQLite using SQLModel. The Progress page shows your history, average,
-best score, and a summary for each subject. You can open any saved result again.
-The average is the arithmetic mean of the percentages from completed attempts.
+The Progress page shows your saved quizzes, average score and best score. You
+can also open your old results from there. The average is calculated from each
+completed quiz's percentage.
 
-Only submitted quizzes are saved. Refreshing during a quiz returns you to the
-home page, but your submitted attempts stay in the database. Different browser
-sessions have separate active quizzes and share the same local history.
+This is a local single-user app. There are no accounts yet.
 
-## Run it locally
+## What I used
 
-The project uses Python 3.12, Reflex 0.10.0, and uv.
+- Python 3.12
+- Reflex for the pages and app logic
+- SQLite and SQLModel to save quiz attempts
+- uv to manage packages
 
-If you don't have uv, install it first (macOS/Linux):
+## How to run
+
+First, install uv if you don't have it. On macOS or Linux:
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
+source "$HOME/.local/bin/env"
 ```
 
-Restart your terminal after installing uv. Then, from the project folder, run:
+Check that it works:
+
+```sh
+uv --version
+```
+
+Clone the project and open its folder:
+
+```sh
+git clone https://github.com/oindrila16/learnloop.git
+cd learnloop
+```
+
+If you already have the project, just open a terminal in the project folder.
+Then run:
 
 ```sh
 uv python install 3.12
@@ -36,76 +52,42 @@ uv run python -m learnloop.database
 uv run reflex run
 ```
 
-Open http://localhost:3000. The first run needs an internet connection to download
-some frontend tools and packages. Keep the terminal open while using the app,
-and press Ctrl+C when you're done.
+Open http://localhost:3000 in your browser. The first run needs internet to
+download the required tools and packages. Keep the terminal running while using
+the app. Press Ctrl+C to stop it.
 
-You can open progress directly at http://localhost:3000/progress.
+## A few things to know
 
-## Using the quiz
+- A correct answer gets 1 point. A wrong or skipped answer gets 0.
+- Only submitted quizzes are saved.
+- Refreshing the page can clear an unfinished quiz. Saved quizzes stay there.
+- Home and Progress ask before you leave an unfinished quiz.
+- You can use Tab to move between controls and arrow keys to choose an answer.
+- Dates in the history are shown in UTC.
 
-Use Tab to move between controls. In the answer options, use the arrow keys to
-move between choices. The selected answer has a border and a "Selected" label.
-Previous and Next keep the answers you've already picked.
+## Saved data
 
-Home and Progress ask before discarding an unfinished quiz. Refreshing can still
-clear an unfinished attempt. While a quiz is saving, wait for the result or an
-error before trying again.
+Quiz history is stored in `learnloop.db` in the project folder. This file is not
+uploaded to GitHub. Running the database setup command again keeps your history.
+Old results keep their own copy of the questions and answers, so changing a
+question later won't change a saved result.
 
-To reopen a result, use View Results in Progress. If you open `/results` without
-a result loaded, the app points you back to Progress.
-
-## Database and backups
-
-The database is `learnloop.db` in the project folder. It stays out of Git. The
-initialization command creates missing tables and is safe to run again:
-
-```sh
-uv run python -m learnloop.database
-```
-
-It doesn't delete saved attempts. Run it before using the app for the first time.
-If a save fails, the app shows an error and keeps your answers so you can retry.
-
-Each saved attempt includes its own copy of the questions, options, answers, and
-explanations. Editing the question bank won't change old results. Dates are
-stored and displayed in UTC.
-
-To back up your history, stop the app with Ctrl+C first, then copy the database
-somewhere safe. For example, from the project folder:
+To make a backup, stop the app first. Then copy the database somewhere safe:
 
 ```sh
 cp learnloop.db "$HOME/Desktop/learnloop-backup.db"
 ```
 
-Use a different backup filename if you want to keep earlier copies. To restore,
-stop the app and copy your backup back to `learnloop.db`. Restoring replaces the
-current history, so keep a copy of that file first.
+Use a new filename if you want to keep an older backup. To restore a backup, stop
+the app and copy it back as `learnloop.db`. Keep a copy of your current database
+first, because restoring replaces it.
 
-## Where things are
+## Tests
 
-- `learnloop/learnloop.py` has the home page, quiz screens, and results.
-- `learnloop/state.py` handles answers, navigation, and submission on the server.
-- `learnloop/questions.py` has the question bank, validation, and scoring.
-- `learnloop/database.py` has the SQLite tables, saving, and history queries.
-- `tests/test_quiz.py` checks the question bank and quiz flow.
-- `tests/test_database.py` checks persistence using temporary databases.
-- `rxconfig.py` has the Reflex settings.
-- `uv.lock` keeps the dependency versions consistent.
-- `AGENTS.md` has the project guidelines.
-
-Reflex creates the `.web` folder automatically, so changes go in the Python files.
-
-## Checking changes
+Run the tests from the project folder:
 
 ```sh
 uv run python -m unittest discover -s tests -v
-uv run python -m compileall -q learnloop rxconfig.py
-uv run reflex run
 ```
 
-After the app starts, open it in a browser and check it at both desktop and mobile
-widths.
-
-I'm following the [Reflex docs](https://reflex.dev/docs/getting-started/installation/)
-as I build this.
+The tests use temporary databases, so they don't change your saved quizzes.
