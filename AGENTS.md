@@ -11,3 +11,4 @@
 - Use uv for dependencies and commands. Keep dependencies and file structure small.
 - Run relevant checks after each stage. Never claim a browser test passed unless it was actually performed.
 - Do not add accounts until a later requested stage.
+- Keep project writing natural, simple, and personal. The README should sound like the owner's own project notes, without inflated claims or invented experience.

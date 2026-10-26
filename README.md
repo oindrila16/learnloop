@@ -1,57 +1,53 @@
 # LearnLoop
 
-A beginner-friendly, local Python and Reflex learning app. Stage 1 includes a
-light-themed home page and informational cards for Python, SQL, and Computer
-Fundamentals. Cards are not interactive yet. Quizzes, results, saved attempts,
-SQLite storage, and accounts are not implemented in this stage.
+I'm building LearnLoop to practice Python and make a simple quiz app for Python,
+SQL, and Computer Fundamentals. I'm using Reflex for the interface and app logic.
 
-## Install and run
+So far, it has a home page with three subject cards. The cards don't do anything
+yet. Next, I plan to add multiple-choice quizzes, scores, and answer explanations.
+Saved attempts and progress tracking will come later, using SQLite and SQLModel.
+For now, this is a local app for one person.
 
-Requires macOS/Linux with curl (or install uv using the official instructions at
-https://docs.astral.sh/uv/getting-started/installation/).
+## Run it locally
+
+The project uses Python 3.12, Reflex 0.10.0, and uv.
+
+If you don't have uv, install it first (macOS/Linux):
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Restart your terminal, then run:
+Restart your terminal after installing uv. Then, from the project folder, run:
 
 ```sh
-cd /Users/oindrilasaha/Desktop/projects/learnloop
 uv python install 3.12
 uv sync --locked
 uv run reflex run
 ```
 
-Open http://localhost:3000 in your browser. Keep the terminal running; press
-Ctrl+C to stop. The backend runs on port 8000. The first run downloads the
-frontend build tools and packages and needs internet access. Reflex generates
-its own frontend; there is no separate frontend to maintain.
+Open http://localhost:3000. The first run needs an internet connection to download
+some frontend tools and packages. Keep the terminal open while using the app,
+and press Ctrl+C when you're done.
 
-Python is restricted to 3.12; `uv.lock` records exact dependency versions,
-including Reflex 0.10.0. No database or Redis server is needed.
+## Where things are
 
-## Files
+- `learnloop/learnloop.py` has the home page and subject cards.
+- `rxconfig.py` has the Reflex settings.
+- `uv.lock` keeps the dependency versions consistent.
+- `AGENTS.md` has the project guidelines.
 
-- `learnloop/learnloop.py`: the home page and reusable subject card.
-- `rxconfig.py`: local app configuration.
-- `AGENTS.md`: development rules for future stages.
-- `pyproject.toml`, `.python-version`, `uv.lock`: reproducible Python environment.
+Reflex creates the `.web` folder automatically, so changes go in the Python files.
 
-The card grid uses one column below 768px and three columns at larger widths.
-Do not edit `.web/`; Reflex generates it from Python.
-
-## Check changes
+## Checking changes
 
 ```sh
 uv run python -m compileall -q learnloop rxconfig.py
-CI=1 uv run reflex run
+uv run reflex run
 ```
 
-Wait for compilation and the frontend/backend URLs. Open the page and check it
-at desktop and mobile widths. A successful compile alone is not a browser test.
+After the app starts, open it in a browser and check it at both desktop and mobile
+widths.
 
-Reference: [installation](https://reflex.dev/docs/getting-started/installation/),
-[core concepts](https://reflex.dev/docs/getting-started/basics/),
-[state](https://reflex.dev/docs/state/overview/), and
-[responsive styling](https://reflex.dev/docs/styling/responsive/).
+I'm following the [Reflex docs](https://reflex.dev/docs/getting-started/installation/)
+as I build this.

@@ -39,7 +39,11 @@ def index() -> rx.Component:
             rx.el.main(
                 rx.vstack(
                     rx.badge("A little learning, every day", variant="soft", size="2"),
-                    rx.heading("LearnLoop", as_="h1", size="9"),
+                    rx.heading(
+                        "LearnLoop",
+                        as_="h1",
+                        size=rx.breakpoints(initial="8", sm="9"),
+                    ),
                     rx.text(
                         "Build your confidence in Python, SQL, and computer fundamentals, "
                         "one quiz at a time.",
