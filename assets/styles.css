@@ -1,0 +1,33 @@
+/* Shared styles; the interface and events stay in Python. */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; color: var(--gray-12); }
+p, h1, h2, h3 { overflow-wrap: anywhere; }
+.rt-Flex, .rt-Grid, .rt-Card { min-width: 0; max-width: 100%; }
+.rt-Text { line-height: 1.65; }
+.rt-Button {
+  min-height: 44px;
+  height: auto;
+  padding: 10px 16px;
+  white-space: normal;
+  text-align: center;
+}
+a:focus-visible, button:focus-visible, input:focus-visible,
+[tabindex]:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--indigo-9);
+  outline-offset: 4px;
+}
+.answer-row:has(:focus-visible) {
+  outline: 3px solid var(--indigo-9);
+  outline-offset: 4px;
+}
+.answer-row:hover { border-color: var(--indigo-8); }
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  padding: 12px;
+  background: white;
+  transform: translateY(-200%);
+  z-index: 100;
+}
+.skip-link:focus { transform: translateY(0); }

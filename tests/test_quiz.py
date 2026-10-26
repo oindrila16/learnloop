@@ -92,7 +92,7 @@ class FlowTests(unittest.TestCase):
                             s.select_answer(q.id, next(id for id, _ in q.options if id != q.correct_id))
                         s.next()
                     s.request_submit()
-                    s.submit()
+                    list(s.submit())
                     self.assertEqual((s.score, s.percentage), (expected, expected * 10))
 
     def test_navigation_and_validation(self):
@@ -111,7 +111,7 @@ class FlowTests(unittest.TestCase):
         s.previous()
         self.assertEqual(s.number, 1)
         self.assertEqual(s.review, [])
-        s.submit()  # No confirmation, no result.
+        list(s.submit())  # No confirmation, no result.
         self.assertEqual(s.stage, "quiz")
 
     def test_submission_is_final_and_fresh_attempt_clears(self):
@@ -126,12 +126,12 @@ class FlowTests(unittest.TestCase):
         s.cancel_submit()
         self.assertEqual(s.stage, "quiz")
         s.request_submit()
-        s.submit()
+        list(s.submit())
         self.assertEqual((s.score, s.percentage), (10, 100))
         snapshot = list(s.review)
         s.select_answer("py-10", "py-10-a")
         s.previous()
-        s.submit()
+        list(s.submit())
         self.assertEqual(s.review, snapshot)
         self.assertEqual(s.score, 10)
         s.start()
@@ -146,7 +146,7 @@ class FlowTests(unittest.TestCase):
             s.next()
         s.request_submit()
         self.assertEqual(s.total - s.answered, 10)
-        s.submit()
+        list(s.submit())
         self.assertEqual((s.score, s.percentage), (0, 0))
         self.assertEqual(other.stage, "quiz")
         self.assertEqual(other.review, [])

@@ -42,6 +42,19 @@ and press Ctrl+C when you're done.
 
 You can open progress directly at http://localhost:3000/progress.
 
+## Using the quiz
+
+Use Tab to move between controls. In the answer options, use the arrow keys to
+move between choices. The selected answer has a border and a "Selected" label.
+Previous and Next keep the answers you've already picked.
+
+Home and Progress ask before discarding an unfinished quiz. Refreshing can still
+clear an unfinished attempt. While a quiz is saving, wait for the result or an
+error before trying again.
+
+To reopen a result, use View Results in Progress. If you open `/results` without
+a result loaded, the app points you back to Progress.
+
 ## Database and backups
 
 The database is `learnloop.db` in the project folder. It stays out of Git. The

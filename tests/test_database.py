@@ -42,14 +42,14 @@ class PersistenceTests(unittest.TestCase):
                 state.select_answer(question.id, question.correct_id)
             state.next()
         state.request_submit()
-        state.submit()
+        list(state.submit())
         return state
 
     def test_empty_history_and_progress(self):
         self.assertEqual(db.history(), [])
         self.assertEqual(db.summary([]), {"count": 0, "average": None, "best": None, "latest": None, "subjects": []})
         state = QuizState(_reflex_internal_init=True)
-        state.load_progress()
+        list(state.load_progress())
         self.assertEqual(state.stage, "progress")
         self.assertEqual((state.completed, state.history_items, state.error), (0, [], ""))
         state.choose_subject("python")
@@ -71,18 +71,18 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(len(rows), 10)
             self.assertEqual(len(json.loads(rows[0].options_json)), 4)
         db.initialize(self.engine)
-        state.load_progress()
+        list(state.load_progress())
         self.assertEqual(state.completed, 1)
         self.assertEqual(state.history_items[0]["id"], attempt_id)
         self.assertEqual(state.average, "40.0%")
         changed = tuple(replace(q, prompt="New text", explanation="New explanation", correct_id=q.options[0][0]) for q in BANK["python"])
         with patch.dict(BANK, {"python": changed}):
             self.assertEqual(db.get_attempt(attempt_id), original)
-            state.view_saved(attempt_id)
+            list(state.view_saved(attempt_id))
             self.assertEqual(state.review, original["review"])
             self.assertEqual(state.score, 4)
             self.assertEqual(db.save_attempt(attempt_id, "python", {}), original)
-        state.submit()
+        list(state.submit())
         self.assertEqual(len(db.history()), 1)
 
     def test_unique_primary_key_and_idempotent_retry(self):
@@ -128,7 +128,7 @@ class PersistenceTests(unittest.TestCase):
                 state = self.submit()
         self.assertEqual(state.stage, "confirm")
         self.assertEqual(len(db.history()), 1)
-        state.submit()
+        list(state.submit())
         self.assertEqual(state.stage, "results")
         self.assertEqual(state.score, 4)
         self.assertEqual(len(db.history()), 1)
@@ -150,7 +150,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(session.exec(select(db.Answer)).all(), [])
         with self.engine.begin() as connection:
             connection.exec_driver_sql("DROP TRIGGER fail_answer")
-        state.submit()
+        list(state.submit())
         self.assertEqual(state.stage, "results")
         self.assertEqual(state._attempt_id, attempt_id)
         self.assertEqual(state.score, 4)
@@ -160,7 +160,7 @@ class PersistenceTests(unittest.TestCase):
         state = QuizState(_reflex_internal_init=True)
         with patch("learnloop.state.history", side_effect=OperationalError("test", {}, Exception("unavailable"))):
             with self.assertLogs("learnloop.state", level="ERROR"):
-                state.load_progress()
+                list(state.load_progress())
         self.assertIn("Could not load", state.error)
 
     def test_summary_is_mean_of_percentages_and_history_newest_first(self):
@@ -184,7 +184,7 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(by_name["SQL"]["best"], "0.0%")
         self.assertEqual(by_name["Computer Fundamentals"]["average"], "No attempts yet")
         state = QuizState(_reflex_internal_init=True)
-        state.load_progress()
+        list(state.load_progress())
         self.assertEqual((state.completed, state.average, state.best), (3, "46.7%", "90.0%"))
 
     def test_persistence_after_fresh_process_restart(self):
@@ -198,9 +198,9 @@ from learnloop import database as db
 from learnloop.state import QuizState
 db.engine = db.make_engine(Path(sys.argv[1]))
 s = QuizState(_reflex_internal_init=True)
-s.load_progress()
+list(s.load_progress())
 assert s.completed == 1
-s.view_saved(sys.argv[2])
+list(s.view_saved(sys.argv[2]))
 assert s.score == 7 and len(s.review) == 10 and not s.error
 print(json.dumps({"score": s.score, "review": s.review}))
 db.engine.dispose()
@@ -209,6 +209,83 @@ db.engine.dispose()
         saved = json.loads(result.stdout)
         self.assertEqual(saved["score"], 7)
         self.assertEqual(saved["review"], state.review)
+
+
+    def test_discard_warning_preserves_answers_until_confirmed(self):
+        state = QuizState(_reflex_internal_init=True)
+        state.choose_subject("python")
+        state.start()
+        state.select_answer("py-01", "py-01-b")
+        attempt_id = state._attempt_id
+        for destination in ("/", "/progress"):
+            state.navigate(destination)
+            self.assertTrue(state.discard_open)
+            self.assertEqual(state.stage, "quiz")
+            self.assertEqual(state.selected_id, "py-01-b")
+            state.set_discard_open(False)
+            self.assertEqual(state._attempt_id, attempt_id)
+        state.navigate("/progress")
+        events = state.confirm_discard()
+        self.assertTrue(events)
+        self.assertFalse(state.discard_open)
+        self.assertEqual(state.stage, "home")
+        self.assertEqual(state._answers, {})
+        self.assertEqual(db.history(), [])
+
+    def test_saving_feedback_blocks_repeat_clicks_and_navigation(self):
+        state = QuizState(_reflex_internal_init=True)
+        state.choose_subject("python")
+        state.start()
+        for _ in range(9):
+            state.next()
+        state.request_submit()
+        submission = state.submit()
+        next(submission)
+        self.assertTrue(state.saving)
+        self.assertEqual(db.history(), [])
+        list(state.submit())
+        state.cancel_submit()
+        self.assertIsNone(state.navigate("/"))
+        self.assertEqual(state.stage, "confirm")
+        list(submission)
+        self.assertFalse(state.saving)
+        self.assertEqual(state.stage, "results")
+        self.assertEqual(len(db.history()), 1)
+
+    def test_loading_feedback_and_missing_results(self):
+        state = self.submit()
+        load = state.load_progress()
+        next(load)
+        self.assertTrue(state.loading)
+        self.assertIsNone(state.navigate("/"))
+        list(load)
+        self.assertFalse(state.loading)
+        self.assertEqual(state.completed, 1)
+        for id in ("invalid", str(uuid4())):
+            list(state.view_saved(id))
+            self.assertIn("could not be found", state.error)
+            self.assertFalse(state.history_error)
+            self.assertEqual(len(state.history_items), 1)
+        state.choose_subject("missing-subject")
+        self.assertIn("not available", state.error)
+        self.assertEqual(state.stage, "progress")
+
+    def test_direct_results_and_refresh(self):
+        state = QuizState(_reflex_internal_init=True)
+        state.load_results()
+        self.assertEqual(state.stage, "unavailable")
+        self.assertEqual(state.review, [])
+        self.assertIn("no result", state.error)
+        saved = self.submit()
+        original_review = list(saved.review)
+        saved.load_results()
+        self.assertEqual(saved.stage, "results")
+        self.assertEqual(saved.review, original_review)
+        saved.home()  # Refresh on Home may reset active state, not history.
+        self.assertEqual(len(db.history()), 1)
+        list(saved.load_progress())
+        list(saved.view_saved(saved.history_items[0]["id"]))
+        self.assertEqual(saved.review, original_review)
 
 
 if __name__ == "__main__":

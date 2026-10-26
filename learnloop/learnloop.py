@@ -42,7 +42,7 @@ def intro() -> rx.Component:
         rx.text("Move back and forth to change your answers, or leave questions unanswered. Each correct answer earns one point. There is no negative marking."),
         rx.text("Your score and explanations appear after you submit. Completed attempts are saved on this computer."),
         rx.button("Start Quiz", on_click=Q.start, size="3"),
-        rx.button("Return home", on_click=Q.home, variant="soft"),
+        rx.button("Return home", on_click=Q.navigate("/"), variant="soft"),
         spacing="5", align="start",
     )
 
@@ -50,11 +50,15 @@ def intro() -> rx.Component:
 def option(item: rx.Var[dict[str, str]]) -> rx.Component:
     return rx.el.label(
         rx.hstack(
-            rx.radio_group.item(value=item["id"]),
-            rx.text(item["text"]),
+            rx.radio_group.item(value=item["id"], id=item["id"], aria_labelledby=item["id"] + "-label"),
+            rx.text(item["text"], id=item["id"] + "-label", flex="1", min_width="0"),
+            rx.cond(Q.selected_id == item["id"], rx.text("Selected", size="2", weight="bold")),
             spacing="3", align="center",
         ),
-        display="block", padding="16px", border="1px solid var(--gray-6)",
+        display="block", padding="18px", border="2px solid",
+        border_color=rx.cond(Q.selected_id == item["id"], "var(--indigo-9)", "var(--gray-6)"),
+        background=rx.cond(Q.selected_id == item["id"], "var(--indigo-3)", "white"),
+        class_name="answer-row",
         border_radius="8px", cursor="pointer", width="100%",
     )
 
@@ -62,14 +66,15 @@ def option(item: rx.Var[dict[str, str]]) -> rx.Component:
 def quiz() -> rx.Component:
     return rx.vstack(
         rx.heading(Q.subject_name, as_="h1", size="6"),
-        rx.text("Question ", Q.number, " of ", Q.total),
+        rx.text("Question ", Q.number, " of ", Q.total, role="status", aria_live="polite"),
         rx.text(Q.answered, " of ", Q.total, " answered", color=rx.color("gray", 11)),
-        rx.heading(Q.prompt, as_="h2", size="5"),
+        rx.text("Choose one answer. Use Tab to reach the options and arrow keys to move between them.", size="2", color=rx.color("gray", 11)),
+        rx.heading(Q.prompt, as_="h2", size="5", id="question-heading", tab_index=-1, line_height="1.5"),
         rx.radio_group.root(
             rx.vstack(rx.foreach(Q.options, option), spacing="3", width="100%"),
             value=Q.selected_id,
             on_change=lambda value: Q.select_answer(Q.question_id, value),
-            aria_label="Answer options", width="100%",
+            aria_labelledby="question-heading", width="100%", key=Q.question_id,
         ),
         rx.flex(
             rx.button("Previous", on_click=Q.previous, disabled=Q.number == 1, variant="soft"),
@@ -85,12 +90,13 @@ def quiz() -> rx.Component:
 
 def confirmation() -> rx.Component:
     return rx.vstack(
-        rx.heading("Submit your quiz?", as_="h1", size="7"),
+        rx.heading("Submit your quiz?", as_="h1", size="7", id="confirmation-heading", tab_index=-1),
         rx.text("Unanswered questions: ", Q.total - Q.answered, " of ", Q.total, "."),
         rx.text("Unanswered questions earn zero points. Once submitted, your answers are final."),
+        rx.cond(Q.saving, rx.text("Saving your quiz. Please wait…", role="status", aria_live="polite")),
         rx.flex(
-            rx.button("Keep answering", on_click=Q.cancel_submit, variant="soft"),
-            rx.button("Submit quiz", on_click=Q.submit), gap="16px", flex_wrap="wrap",
+            rx.button("Keep answering", on_click=Q.cancel_submit, variant="soft", disabled=Q.saving),
+            rx.button(rx.cond(Q.saving, "Saving your quiz…", "Submit quiz"), on_click=Q.submit, disabled=Q.saving, aria_busy=Q.saving), gap="16px", flex_wrap="wrap",
         ),
         spacing="5", align="start",
     )
@@ -104,7 +110,11 @@ def review_card(item: rx.Var[dict[str, str]]) -> rx.Component:
             rx.text("Your answer: ", item["selected"]),
             rx.text("Correct answer: ", item["correct"], weight="bold"),
             rx.text("Options: ", item["options"], size="2"),
-            rx.text(item["explanation"], color=rx.color("gray", 11)),
+            rx.box(
+                rx.text("Why this is correct", weight="bold", size="2"),
+                rx.text(item["explanation"], color=rx.color("gray", 11)),
+                border_top="1px solid var(--gray-5)", padding_top="12px", width="100%",
+            ),
             align="start", spacing="3",
         ),
         width="100%", padding="20px",
@@ -113,14 +123,14 @@ def review_card(item: rx.Var[dict[str, str]]) -> rx.Component:
 
 def results() -> rx.Component:
     return rx.vstack(
-        rx.heading(Q.subject_name, " results", as_="h1", size="7"),
+        rx.heading(Q.subject_name, " results", as_="h1", size="7", id="results-heading", tab_index=-1),
         rx.text(Q.score, " out of ", Q.total, " correct · ", Q.percentage, "%", size="6", weight="bold"),
         rx.text("Saved · ", Q.saved_date),
         rx.flex(
-            rx.button("Return home", on_click=Q.home, variant="soft"),
+            rx.button("Return home", on_click=Q.navigate("/"), variant="soft"),
             rx.button("Start a fresh attempt", on_click=Q.start), gap="16px", flex_wrap="wrap",
         ),
-        rx.button("View progress", on_click=Q.load_progress, variant="soft"),
+        rx.button("View progress", on_click=Q.navigate("/progress"), variant="soft"),
         rx.foreach(Q.review, review_card),
         spacing="5", align="start", width="100%",
     )
@@ -132,7 +142,7 @@ def history_card(item: rx.Var[dict[str, str]]) -> rx.Component:
             rx.heading(item["subject"], as_="h3", size="4"),
             rx.text(item["score"], " correct · ", item["percentage"]),
             rx.text(item["date"], size="2"),
-            rx.button("View Results", on_click=Q.view_saved(item["id"]), variant="soft"),
+            rx.button("View Results", on_click=Q.view_saved(item["id"]), variant="soft", disabled=Q.loading, aria_label="View results for " + item["subject"] + " on " + item["date"]),
             align="start", spacing="3",
         ), width="100%", padding="20px",
     )
@@ -154,7 +164,9 @@ def progress() -> rx.Component:
     return rx.vstack(
         rx.heading("Your progress", as_="h1", size="7"),
         rx.text("Local single-user version · All completed quizzes on this computer."),
-        rx.cond(Q.error == "",
+        rx.cond(Q.loading,
+            rx.text("Loading your saved quizzes…", role="status"),
+            rx.cond(~Q.history_error,
             rx.cond(Q.completed == 0,
                 rx.text("No attempts yet. Complete a quiz to see your progress here."),
                 rx.vstack(
@@ -175,14 +187,41 @@ def progress() -> rx.Component:
                 ),
             ),
             rx.button("Retry loading history", on_click=Q.load_progress),
+            ),
         ),
-        rx.link("Return home", href="/"),
+        rx.button("Return home", on_click=Q.navigate("/"), variant="soft"),
         spacing="5", align="start", width="100%",
+    )
+
+
+def discard_dialog() -> rx.Component:
+    return rx.alert_dialog.root(
+        rx.alert_dialog.content(
+            rx.alert_dialog.title("Leave this quiz?"),
+            rx.alert_dialog.description("Your unfinished answers will be discarded. Completed attempts stay saved."),
+            rx.flex(
+                rx.alert_dialog.cancel(rx.button("Keep answering", variant="soft")),
+                rx.button("Discard and leave", on_click=Q.confirm_discard),
+                gap="12px", flex_wrap="wrap", margin_top="24px",
+            ), max_width="440px", width="calc(100vw - 40px)",
+        ),
+        open=Q.discard_open, on_open_change=Q.set_discard_open,
+    )
+
+
+def unavailable() -> rx.Component:
+    return rx.vstack(
+        rx.heading("Result unavailable", as_="h1", size="6"),
+        rx.text("Open a saved attempt from Progress, or choose a subject to start a quiz."),
+        rx.button("Open Progress", on_click=Q.navigate("/progress")),
+        spacing="4", align="start",
     )
 
 
 def index() -> rx.Component:
     return rx.box(
+        rx.link("Skip to content", href="#main-content", class_name="skip-link"),
+        discard_dialog(),
         rx.container(
             rx.el.header(
                 rx.hstack(
@@ -190,7 +229,13 @@ def index() -> rx.Component:
                     rx.text("LearnLoop", weight="bold", size="5"), align="center", spacing="3",
                 ),
                 rx.badge("Local single-user version", variant="soft", margin_y="12px"),
-                rx.hstack(rx.link("Home", href="/"), rx.link("Progress", href="/progress"), spacing="4"),
+                rx.el.nav(
+                    rx.flex(
+                        rx.button("Home", on_click=Q.navigate("/"), variant="soft", disabled=Q.saving | Q.loading),
+                        rx.button("Progress", on_click=Q.navigate("/progress"), variant="soft", disabled=Q.saving | Q.loading),
+                        gap="12px", flex_wrap="wrap",
+                    ), aria_label="Main navigation",
+                ),
                 padding_y="24px", border_bottom="1px solid var(--gray-5)",
             ),
             rx.el.main(
@@ -199,11 +244,16 @@ def index() -> rx.Component:
                     rx.cond(Q.stage == "intro", intro(),
                         rx.cond(Q.stage == "quiz", quiz(),
                             rx.cond(Q.stage == "confirm", confirmation(),
-                                rx.cond(Q.stage == "progress", progress(), results()),
+                                rx.cond(Q.stage == "progress", progress(),
+                                    rx.cond((Q.stage == "results") & (Q.review.length() > 0), results(), unavailable()),
+                                ),
                             ),
                         ),
                     ),
                 ),
+                id="main-content", tab_index=-1,
+                max_width=rx.cond((Q.stage == "home") | (Q.stage == "progress"), "100%", "720px"),
+                margin_x="auto", width="100%",
                 padding_y=rx.breakpoints(initial="32px", sm="56px"),
             ),
             rx.el.footer(rx.text("Learn at your own pace.", size="2"), padding_y="24px", border_top="1px solid var(--gray-5)"),
@@ -213,6 +263,8 @@ def index() -> rx.Component:
     )
 
 
-app = rx.App()
+app = rx.App(stylesheets=["/styles.css"])
 app.add_page(index, route="/", on_load=Q.home, title="LearnLoop | Learn at your own pace", description="Practice Python, SQL, and Computer Fundamentals.")
 app.add_page(index, route="/progress", on_load=Q.load_progress, title="Progress | LearnLoop")
+
+app.add_page(index, route="/results", on_load=Q.load_results, title="Results | LearnLoop")
