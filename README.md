@@ -3,10 +3,14 @@
 I'm building LearnLoop to practice Python and make a simple quiz app for Python,
 SQL, and Computer Fundamentals. I'm using Reflex for the interface and app logic.
 
-So far, it has a home page with three subject cards. The cards don't do anything
-yet. Next, I plan to add multiple-choice quizzes, scores, and answer explanations.
+Each subject has ten beginner questions. You can move between questions, change
+your answers, and leave questions unanswered. Before submitting, you'll see how
+many you skipped. Correct answers earn one point; wrong or missing answers earn
+zero. The results show your score and explain each answer.
+
 Saved attempts and progress tracking will come later, using SQLite and SQLModel.
-For now, this is a local app for one person.
+For now, attempts only last for the current session. Refreshing the page returns
+you to the home page. This is still a local app for one person, with no accounts.
 
 ## Run it locally
 
@@ -32,7 +36,10 @@ and press Ctrl+C when you're done.
 
 ## Where things are
 
-- `learnloop/learnloop.py` has the home page and subject cards.
+- `learnloop/learnloop.py` has the home page, quiz screens, and results.
+- `learnloop/state.py` handles answers, navigation, and submission on the server.
+- `learnloop/questions.py` has the question bank, validation, and scoring.
+- `tests/test_quiz.py` checks the question bank and quiz flow.
 - `rxconfig.py` has the Reflex settings.
 - `uv.lock` keeps the dependency versions consistent.
 - `AGENTS.md` has the project guidelines.
@@ -42,6 +49,7 @@ Reflex creates the `.web` folder automatically, so changes go in the Python file
 ## Checking changes
 
 ```sh
+uv run python -m unittest discover -s tests -v
 uv run python -m compileall -q learnloop rxconfig.py
 uv run reflex run
 ```
