@@ -12,7 +12,7 @@ from uuid import uuid4
 from reflex.istate.data import HeaderData
 from reflex.state import StateUpdate
 from reflex_base.utils.serializers import serialize
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, select
 from starlette.testclient import TestClient
 
@@ -123,6 +123,16 @@ class AuthTests(unittest.TestCase):
         state.start()
         self.assertEqual(state.stage, "login")
         self.assertEqual(state.review, [])
+
+    def test_session_database_failure_clears_private_data_and_explains_error(self):
+        _, token = new_account()
+        state = self.complete(token)
+        with patch("learnloop.state.current_user", side_effect=OperationalError("test", {}, Exception("unavailable"))):
+            list(state.load_progress())
+        self.assertEqual(state.stage, "login")
+        self.assertIn("database", state.error)
+        self.assertNotIn("Please log in", state.error)
+        self.assertEqual((state.review, state.history_items, state.username), ([], [], ""))
 
     def test_two_learners_have_private_results_and_cannot_guess_ids(self):
         alice_id, alice_token = new_account("alice")

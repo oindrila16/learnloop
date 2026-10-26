@@ -14,6 +14,8 @@ class Question:
 
 def question(id: str, prompt: str, options: tuple[str, str, str, str], correct: int, explanation: str) -> Question:
     """Give each option a stable ID based on its question ID."""
+    if len(options) != 4 or type(correct) is not int or not 0 <= correct < 4:
+        raise ValueError(f"{id}: provide four options and a correct index from 0 to 3.")
     return Question(id, prompt, tuple((f"{id}-{letter}", text) for letter, text in zip("abcd", options)), f"{id}-{'abcd'[correct]}", explanation)
 
 
@@ -73,10 +75,11 @@ def validate_bank(bank=BANK, subjects=SUBJECTS) -> None:
             raise ValueError("Each subject needs ten questions.")
         for item in questions:
             ids = [item.id, *(option_id for option_id, _ in item.options)]
-            if any(not id or id in seen for id in ids) or len(set(ids)) != len(ids):
+            if any(not isinstance(id, str) or not id.strip() or id in seen for id in ids) or len(set(ids)) != len(ids):
                 raise ValueError("Question and option IDs must be unique and nonempty.")
             seen.update(ids)
-            if len(item.options) != 4 or len({text for _, text in item.options}) != 4:
+            texts = [text for _, text in item.options]
+            if len(texts) != 4 or any(not isinstance(text, str) or not text.strip() for text in texts) or len({text.strip() for text in texts}) != 4:
                 raise ValueError("Each question needs four distinct options.")
             if item.correct_id not in dict(item.options):
                 raise ValueError("Correct option must belong to the question.")

@@ -4,10 +4,7 @@ LearnLoop uses the Starlette backend already included with Reflex 0.10.0.
 `pwdlib[argon2]` hashes passwords with Argon2id. SQLModel stores accounts and
 sessions in the same SQLite database as quiz attempts.
 
-I checked reflex-local-auth too. Its current implementation uses local-storage
-tokens and the older Reflex database API. Using it here would need changes to
-meet the cookie and database requirements. Reflex's enterprise authentication
-uses an external identity provider, which this version doesn't need.
+Accounts use a username and password. No external login service is needed.
 
 ## How login works
 

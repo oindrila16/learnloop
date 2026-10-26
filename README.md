@@ -4,118 +4,158 @@ LearnLoop is a simple quiz app for Python, SQL and Computer Fundamentals.
 I'm building this project to practice Python and learn Reflex.
 
 Each subject has 10 questions. You can go back, change your answers or skip a
-question. After submitting, you can see your score, the correct answers and a
-short explanation for each question.
+question. A correct answer gets 1 point. Wrong or skipped answers get 0. After
+submitting, you can see your score and an explanation for each answer.
 
-The Progress page shows your saved quizzes, average score and best score. You
-can also open your old results from there. The average is calculated from each
-completed quiz's percentage.
+You can make an account and keep your quiz history private. The Progress page
+shows your old quizzes, average score and best score. The average is the mean of
+your completed quiz percentages.
 
-You can register with a username and password. Each learner has their own private
-quiz history. There is no email verification or password recovery yet, so keep
-your password somewhere safe.
+## What you need
 
-## What I used
+The project uses Python 3.12, Reflex 0.10.0, SQLite, SQLModel and pwdlib for
+password hashing. uv installs Python and the project packages. You don't need to
+install a separate database server or frontend.
 
-- Python 3.12
-- Reflex for the pages and app logic
-- SQLite and SQLModel to save quiz attempts
-- uv to manage packages
-- pwdlib with Argon2 for password hashing
-
-## How to run
-
-First, install uv if you don't have it. On macOS or Linux:
+On macOS or Linux, install uv from its official installer:
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source "$HOME/.local/bin/env"
-```
-
-Check that it works:
-
-```sh
 uv --version
+uv python install 3.12
 ```
 
-Clone the project and open its folder:
+You can also follow the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+If you open a new terminal and uv isn't found, run the `source` command again.
+
+## Download the project
+
+On a Mac, `git --version` will tell you if Git is available. macOS may prompt you
+to install its command-line tools if it isn't.
+
+If you haven't downloaded the project yet, run:
 
 ```sh
 git clone https://github.com/oindrila16/learnloop.git
 cd learnloop
 ```
 
-If you already have the project, just open a terminal in the project folder.
-Then run:
-
-```sh
-uv python install 3.12
-uv sync --locked
-uv run python -m learnloop.database
-uv run reflex run
-```
-
-Open http://localhost:3000 in your browser, then register or log in. Use
-`localhost` consistently rather than switching to `127.0.0.1`. The first run needs internet to
-download the required tools and packages. Keep the terminal running while using
-the app. Press Ctrl+C to stop it.
-
-If an older version is running, stop it before starting this one. Keep ports 3000
-and 8000 free; the login forms use these addresses. If you need different ports,
-set both public origins as explained in [AUTH.md](AUTH.md).
-
-## Updating an existing database
-
-Stop the app and back up `learnloop.db` first. Then run:
+If you already have the project, just open a terminal in its folder. Then install
+the packages using the versions in `uv.lock`:
 
 ```sh
 uv sync --locked
-uv run python -m learnloop.database
-uv run reflex run
 ```
 
-The database command also runs the migration. It adds the account tables and an
-owner column without deleting quiz history. You can run it again safely. Quizzes
-saved before accounts were added stay unassigned. They are kept in the database,
-but aren't shown in anyone's private history.
+You don't need to activate `.venv` yourself when using `uv run`.
 
-## A few things to know
+## Set up or update the database
 
-- A correct answer gets 1 point. A wrong or skipped answer gets 0.
-- Only submitted quizzes are saved.
-- Refreshing the page can clear an unfinished quiz. Saved quizzes stay there.
-- Home and Progress ask before you leave an unfinished quiz.
-- You can use Tab to move between controls and arrow keys to choose an answer.
-- Dates in the history are shown in UTC.
-- Login lasts up to eight hours. Logging out ends that session on the server.
-- Login attempts are limited. If you try too many times, wait up to 15 minutes.
+Run this from the project folder:
 
-## Saved data
+```sh
+uv run python -m learnloop.database
+```
 
-Quiz history is stored in `learnloop.db` in the project folder. This file is not
-uploaded to GitHub. Running the database setup command again keeps your history.
-Old results keep their own copy of the questions and answers, so changing a
-question later won't change a saved result.
+This creates `learnloop.db` if needed. For an existing database, it adds the
+tables and fields needed for accounts without deleting saved quizzes. Running it
+again is safe. Stop the app and back up an existing database before updating it.
 
-To make a backup, stop the app first. Then copy the database somewhere safe:
+Quizzes saved before accounts were added are still in the database. They won't
+appear in a new account's history because they don't belong to that account.
+
+## Run the app
+
+```sh
+uv run reflex run --backend-host 127.0.0.1
+```
+
+Open http://localhost:3000 and register or log in. Use `localhost` consistently
+rather than switching to `127.0.0.1` in the browser. The first run needs internet
+to download frontend tools and packages.
+
+Keep the terminal running while using the app. Press Ctrl+C to stop. If an older
+version is running, stop it before starting this one. Ports 3000 and 8000 should
+be free. If Reflex chooses other ports automatically, the login addresses won't
+match. See [AUTH.md](AUTH.md) to configure different ports deliberately.
+
+Use Tab to move between controls and arrow keys to choose an answer. Home and
+Progress ask before leaving an unfinished quiz. Only submitted attempts are
+saved. Refreshing can clear an unfinished quiz; completed attempts stay saved.
+
+## Run the checks
+
+```sh
+uv run python -m unittest discover -s tests -v
+uv run reflex compile --dry
+```
+
+The tests use temporary databases and leave your saved quizzes alone. They cover
+scoring, answer navigation, persistence after restart, duplicate submissions,
+failed saves, accounts and private history. The compile command checks the
+Reflex pages without starting a server. You still need to open the app to check
+how the pages look and work in a browser.
+
+## Add or edit questions
+
+Edit `learnloop/questions.py`. The subjects are `python`, `sql` and
+`computer-fundamentals`. Each subject currently needs exactly 10 questions, so
+replace an existing entry when adding a new one.
+
+An entry looks like this:
+
+```python
+question(
+    "py-11",
+    "Which value is a Python Boolean?",
+    ("'True'", "True", "3.5", "[]"),
+    1,
+    "True is a Boolean. Quotes would make it a string.",
+),
+```
+
+The number `1` means the second option is correct. The choices are numbered
+0, 1, 2 and 3 in this file. Write four different options, with no blank answers, and choose one
+correct option. Give every new question a unique ID and a short explanation.
+Option IDs are made from the question ID and the letters a–d.
+
+For wording fixes, keep the existing ID and option order. Use original questions
+with clear answers. State the context if the answer depends on a language version
+or SQL dialect. Saved results keep their original question and answer snapshots.
+
+Validate the bank after editing it, then run the tests:
+
+```sh
+uv run python -c "from learnloop.questions import validate_bank; validate_bank(); print('Question bank is valid')"
+uv run python -m unittest discover -s tests -v
+```
+
+Invalid entries raise an error instead of silently starting a broken quiz.
+
+## Back up your history
+
+Stop every running copy of the app first. Then copy the database somewhere safe:
 
 ```sh
 cp learnloop.db "$HOME/Desktop/learnloop-backup.db"
 ```
 
-Use a new filename if you want to keep an older backup. To restore a backup, stop
-the app and copy it back as `learnloop.db`. Keep a copy of your current database
-first, because restoring replaces it.
+Choose a new filename to keep older backups. To restore one, stop the app and
+copy the backup back as `learnloop.db`. Keep a copy of the current database first,
+because restoring replaces it. Backups contain private history, password hashes
+and session hashes, so keep them private.
 
-## Tests
+## Current limits
 
-Run the tests from the project folder:
+- There is no email verification, password recovery, social login or MFA.
+- Login lasts up to eight hours. Logging out ends that session on the server.
+- Too many login tries can block further tries for up to 15 minutes.
+- Refreshing can discard an unfinished quiz. There are no saved drafts.
+- History dates are shown in UTC.
+- An idle tab may show previously loaded data after logout in another tab. Its
+  next server interaction checks the session and clears private data.
+- This is a small SQLite app. It needs HTTPS, hosting configuration and a security
+  review before public use. Local login working doesn't make it production-ready.
 
-```sh
-uv run python -m unittest discover -s tests -v
-```
-
-The tests use temporary databases, so they don't change your saved quizzes.
-
-See [AUTH.md](AUTH.md) for cookie settings, HTTPS setup, and the limits of this
-version. Login working locally doesn't make this ready for a public deployment.
+See [AUTH.md](AUTH.md) for cookie settings, migration details and HTTPS setup.

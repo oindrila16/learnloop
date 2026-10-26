@@ -25,6 +25,7 @@ class QuizState(rx.State):
     _attempt_id: str = ""
     _destination: str = "/"
     _identity_session: str = ""
+    _session_error: str = ""
 
     stage: str = "home"
     subject_name: str = ""
@@ -59,14 +60,22 @@ class QuizState(rx.State):
 
     def _sync_identity(self) -> bool:
         """Validate on every call and clear data when the session changes or expires."""
+        self._session_error = ""
         try:
             user = current_user(self._token())
             identity = token_digest(self._token())
-        except (AuthenticationRequired, SQLAlchemyError, OSError):
+        except AuthenticationRequired:
+            user = None
+        except (SQLAlchemyError, OSError):
+            user = None
+            self._session_error = "Could not check your login. Check that the database is initialized and readable, then try again."
+        if user is None:
             if self._identity_session or self.username:
                 self.home()
             self._identity_session = ""
             self.username = ""
+            if self._session_error:
+                self.error = self._session_error
             return False
         if self._identity_session != identity:
             self.home()
@@ -77,7 +86,7 @@ class QuizState(rx.State):
     def _require_user(self) -> bool:
         if self._sync_identity():
             return True
-        self.error = "Please log in to use your private quizzes and history."
+        self.error = self._session_error or "Please log in to use your private quizzes and history."
         self._set_stage("login")
         return False
 

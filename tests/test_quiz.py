@@ -7,13 +7,18 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from dataclasses import replace
 
-from learnloop.questions import BANK, SUBJECTS, grade, validate_bank
+from learnloop.questions import BANK, SUBJECTS, grade, question, validate_bank
 from learnloop.state import QuizState
 from support import authenticated_state, new_account
 from learnloop.database import initialize, make_engine
 
 
 class BankTests(unittest.TestCase):
+    def test_question_helper_rejects_extra_options_and_invalid_indices(self):
+        for options, index in ((("a", "b", "c", "d", "e"), 0), (("a", "b", "c", "d"), -1), (("a", "b", "c", "d"), 4)):
+            with self.subTest(options=options, index=index), self.assertRaises(ValueError):
+                question("bad-question", "Prompt", options, index, "Explanation")
+
     def test_bank_and_scoring(self):
         validate_bank()
         for subject, questions in BANK.items():
@@ -38,6 +43,9 @@ class BankTests(unittest.TestCase):
             replace(q, options=q.options[:3]),
             replace(q, options=(q.options[0],) * 4),
             replace(q, correct_id="missing"),
+            replace(q, id=" "),
+            replace(q, options=((q.options[0][0], " "), *q.options[1:])),
+            replace(q, options=((q.options[0][0], q.options[1][1] + " "), *q.options[1:])),
         ):
             bank = dict(BANK)
             bank["python"] = (broken, *BANK["python"][1:])
