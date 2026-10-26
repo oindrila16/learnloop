@@ -31,3 +31,13 @@ a:focus-visible, button:focus-visible, input:focus-visible,
   z-index: 100;
 }
 .skip-link:focus { transform: translateY(0); }
+.account-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-8);
+  border-radius: 6px;
+  background: white;
+  color: var(--gray-12);
+  font: inherit;
+}

@@ -1,6 +1,9 @@
 """SQLite storage. Initialize explicitly with: uv run python -m learnloop.database"""
 
+import hashlib
 import json
+import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,8 +31,54 @@ def make_engine(path: Path):
 engine = make_engine(DB_PATH)
 
 
+class Learner(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    username: str = Field(unique=True, index=True)
+    password_hash: str
+
+
+class LoginSession(SQLModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: str = Field(foreign_key="learner.id", index=True)
+    expires_at: int
+
+
+class LoginBucket(SQLModel, table=True):
+    key: str = Field(primary_key=True)
+    window_start: int
+    count: int
+
+
+class AuthenticationRequired(Exception):
+    """No current, valid server session."""
+
+
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def session_user(session: Session, token: str) -> Learner:
+    """Resolve identity in the same short database session as the private query."""
+    if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+        raise AuthenticationRequired()
+    login = session.get(LoginSession, token_digest(token))
+    if login is None or login.expires_at <= int(time.time()):
+        raise AuthenticationRequired()
+    user = session.get(Learner, login.user_id)
+    if user is None:
+        raise AuthenticationRequired()
+    return user
+
+
+def current_user(token: str, db_engine=None) -> dict[str, str]:
+    with Session(db_engine if db_engine is not None else engine) as session:
+        user = session_user(session, token)
+        return {"id": user.id, "username": user.username}
+
+
 class Attempt(SQLModel, table=True):
     id: str = Field(primary_key=True)
+    user_id: str | None = Field(default=None, foreign_key="learner.id", index=True)
     subject_id: str
     subject_name: str
     score: int
@@ -51,7 +100,19 @@ class Answer(SQLModel, table=True):
 
 def initialize(db_engine=None) -> None:
     """Create missing tables only. Never drop or clear existing data."""
-    SQLModel.metadata.create_all(db_engine if db_engine is not None else engine)
+    db_engine = db_engine if db_engine is not None else engine
+    with db_engine.connect() as connection:
+        if connection.exec_driver_sql("PRAGMA user_version").scalar() > 1:
+            raise RuntimeError("This database uses a newer migration version.")
+    SQLModel.metadata.create_all(db_engine)
+    # Migration 1: SQLite can add a nullable foreign key without rebuilding rows.
+    # NULL means an unassigned legacy attempt; no account is granted ownership.
+    with db_engine.begin() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(attempt)")}
+        if "user_id" not in columns:
+            connection.exec_driver_sql("ALTER TABLE attempt ADD COLUMN user_id VARCHAR REFERENCES learner(id)")
+        connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_attempt_user_id ON attempt (user_id)")
+        connection.exec_driver_sql("PRAGMA user_version=1")
 
 
 def attempt_data(attempt: Attempt) -> dict:
@@ -68,9 +129,10 @@ def attempt_data(attempt: Attempt) -> dict:
     }
 
 
-def get_attempt(attempt_id: str, db_engine=None) -> dict | None:
+def get_attempt(attempt_id: str, token: str, db_engine=None) -> dict | None:
     with Session(db_engine if db_engine is not None else engine) as session:
-        attempt = session.get(Attempt, attempt_id)
+        user = session_user(session, token)
+        attempt = session.exec(select(Attempt).where(Attempt.id == attempt_id, Attempt.user_id == user.id)).first()
         if attempt is None:
             return None
         result = attempt_data(attempt)
@@ -91,10 +153,10 @@ def get_attempt(attempt_id: str, db_engine=None) -> dict | None:
         return result
 
 
-def save_attempt(attempt_id: str, subject_id: str, answers: dict[str, str], db_engine=None) -> dict:
+def save_attempt(attempt_id: str, subject_id: str, answers: dict[str, str], token: str, db_engine=None) -> dict:
     """Persist once, returning the original snapshot if a submission is retried."""
     db_engine = db_engine if db_engine is not None else engine
-    existing = get_attempt(attempt_id, db_engine)
+    existing = get_attempt(attempt_id, token, db_engine)
     if existing is not None:
         return existing
     score, _ = grade(subject_id, answers)
@@ -106,6 +168,8 @@ def save_attempt(attempt_id: str, subject_id: str, answers: dict[str, str], db_e
     try:
         with Session(db_engine) as session:
             with session.begin():
+                user = session_user(session, token)
+                attempt.user_id = user.id
                 session.add(attempt)
                 session.flush()
                 for position, question in enumerate(questions):
@@ -118,19 +182,20 @@ def save_attempt(attempt_id: str, subject_id: str, answers: dict[str, str], db_e
                 # The context commits both tables together, or rolls both back.
     except IntegrityError:
         # Another request may have committed the same UUID while we were saving.
-        existing = get_attempt(attempt_id, db_engine)
+        existing = get_attempt(attempt_id, token, db_engine)
         if existing is not None:
             return existing
         raise
-    saved = get_attempt(attempt_id, db_engine)
+    saved = get_attempt(attempt_id, token, db_engine)
     if saved is None:
         raise RuntimeError("The saved attempt could not be read back.")
     return saved
 
 
-def history(db_engine=None) -> list[dict]:
+def history(token: str, db_engine=None) -> list[dict]:
     with Session(db_engine if db_engine is not None else engine) as session:
-        rows = session.exec(select(Attempt).order_by(Attempt.submitted_at.desc(), Attempt.id.desc())).all()
+        user = session_user(session, token)
+        rows = session.exec(select(Attempt).where(Attempt.user_id == user.id).order_by(Attempt.submitted_at.desc(), Attempt.id.desc())).all()
         return [attempt_data(row) for row in rows]
 
 

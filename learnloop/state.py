@@ -1,12 +1,17 @@
 """Session-specific quiz state and server-side event handlers."""
 
-import reflex as rx
 import logging
 from uuid import UUID, uuid4
+
+import reflex as rx
 from sqlalchemy.exc import SQLAlchemyError
 
+from .auth import LOGIN_ERROR, cookie_token
+from .database import (
+    AuthenticationRequired, current_user, get_attempt, history, save_attempt,
+    summary, token_digest,
+)
 from .questions import BANK, SUBJECTS
-from .database import get_attempt, history, save_attempt, summary
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +24,7 @@ class QuizState(rx.State):
     _stage: str = "home"
     _attempt_id: str = ""
     _destination: str = "/"
+    _identity_session: str = ""
 
     stage: str = "home"
     subject_name: str = ""
@@ -44,11 +50,70 @@ class QuizState(rx.State):
     loading: bool = False
     discard_open: bool = False
     history_error: bool = False
+    username: str = ""
+    logout_pending: bool = False
+
+    def _token(self) -> str:
+        # Reflex 0.10 fills this from the actual socket handshake, not event payloads.
+        return cookie_token(self.router.headers.cookie)
+
+    def _sync_identity(self) -> bool:
+        """Validate on every call and clear data when the session changes or expires."""
+        try:
+            user = current_user(self._token())
+            identity = token_digest(self._token())
+        except (AuthenticationRequired, SQLAlchemyError, OSError):
+            if self._identity_session or self.username:
+                self.home()
+            self._identity_session = ""
+            self.username = ""
+            return False
+        if self._identity_session != identity:
+            self.home()
+            self._identity_session = identity
+        self.username = user["username"]
+        return True
+
+    def _require_user(self) -> bool:
+        if self._sync_identity():
+            return True
+        self.error = "Please log in to use your private quizzes and history."
+        self._set_stage("login")
+        return False
+
+    @rx.event
+    def load_home(self):
+        self.home()
+        self._sync_identity()
+
+    @rx.event
+    def load_login(self):
+        self.home()
+        self.username = ""
+        self._set_stage("login")
+        if "error=" in self.router.url.query:
+            self.error = LOGIN_ERROR
+
+    @rx.event
+    def load_register(self):
+        self.home()
+        self.username = ""
+        self._set_stage("register")
+        if "error=" in self.router.url.query:
+            self.error = "Could not create the account. Try another username, check the password requirements, or try again later."
+
+    @rx.event
+    def request_logout(self):
+        if self.saving or self.loading:
+            return
+        self.logout_pending = True
+        self.discard_open = True
 
     @rx.event
     def navigate(self, destination: str):
         if self.saving or self.loading or destination not in ("/", "/progress"):
             return
+        self._sync_identity()
         if self._stage in ("quiz", "confirm"):
             self._destination = destination
             self.discard_open = True
@@ -75,6 +140,8 @@ class QuizState(rx.State):
 
     @rx.event
     def load_results(self):
+        if not self._require_user():
+            return
         if self._stage == "results" and self.review and self.saved_date:
             return
         self.home()
@@ -96,6 +163,7 @@ class QuizState(rx.State):
 
     @rx.event
     def home(self):
+        self.logout_pending = False
         self.saving = False
         self.loading = False
         self.discard_open = False
@@ -126,6 +194,8 @@ class QuizState(rx.State):
 
     @rx.event
     def choose_subject(self, subject_id: str):
+        if not self._require_user():
+            return
         if not isinstance(subject_id, str) or subject_id not in BANK:
             self.error = "That subject is not available. Choose Python, SQL, or Computer Fundamentals from Home."
             return
@@ -138,6 +208,8 @@ class QuizState(rx.State):
 
     @rx.event
     def start(self):
+        if not self._require_user():
+            return
         if self._stage not in ("intro", "results") or self._subject_id not in BANK:
             if self._stage == "results":
                 self.error = "This subject is no longer available. Choose a subject from Home."
@@ -157,6 +229,8 @@ class QuizState(rx.State):
 
     @rx.event
     def select_answer(self, question_id: str, option_id: str):
+        if not self._require_user():
+            return
         if self._stage != "quiz" or self._subject_id not in BANK:
             return
         q = BANK[self._subject_id][self._position]
@@ -167,6 +241,8 @@ class QuizState(rx.State):
 
     @rx.event
     def previous(self):
+        if not self._require_user():
+            return
         if self._stage == "quiz" and self._position > 0:
             self._position -= 1
             self._show_question()
@@ -174,6 +250,8 @@ class QuizState(rx.State):
 
     @rx.event
     def next(self):
+        if not self._require_user():
+            return
         if self._stage == "quiz" and self._position < 9:
             self._position += 1
             self._show_question()
@@ -181,12 +259,16 @@ class QuizState(rx.State):
 
     @rx.event
     def request_submit(self):
+        if not self._require_user():
+            return
         if self._stage == "quiz" and self._position == 9:
             self._set_stage("confirm")
             return rx.set_focus("confirmation-heading")
 
     @rx.event
     def cancel_submit(self):
+        if not self._require_user():
+            return
         if self._stage == "confirm" and not self.saving:
             self.error = ""
             self._set_stage("quiz")
@@ -204,13 +286,18 @@ class QuizState(rx.State):
 
     @rx.event
     def submit(self):
+        if not self._require_user():
+            return
         if self.saving or self.discard_open or self._stage != "confirm" or self._subject_id not in BANK:
             return
         self.saving = True
         self.error = ""
         yield  # Send the disabled controls and saving message before database work.
         try:
-            saved = save_attempt(self._attempt_id, self._subject_id, self._answers)
+            saved = save_attempt(self._attempt_id, self._subject_id, self._answers, self._token())
+        except AuthenticationRequired:
+            self._require_user()
+            return
         except (SQLAlchemyError, OSError, RuntimeError):
             logger.exception("Could not save quiz attempt")
             self.error = "Your attempt could not be saved. Your answers are still here. Check that the database is initialized and writable, then retry Submit quiz."
@@ -223,12 +310,17 @@ class QuizState(rx.State):
     @rx.event
     def load_progress(self):
         self.home()
+        if not self._require_user():
+            return
         self._set_stage("progress")
         self.loading = True
         yield
         try:
-            attempts = history()
+            attempts = history(self._token())
             totals = summary(attempts)
+        except AuthenticationRequired:
+            self._require_user()
+            return
         except (SQLAlchemyError, OSError):
             logger.exception("Could not load quiz history")
             self.history_error = True
@@ -252,6 +344,8 @@ class QuizState(rx.State):
 
     @rx.event
     def view_saved(self, attempt_id: str):
+        if not self._require_user():
+            return
         if self.loading or self.saving or self._stage in ("quiz", "confirm"):
             return
         try:
@@ -263,7 +357,10 @@ class QuizState(rx.State):
         self.error = ""
         yield
         try:
-            saved = get_attempt(attempt_id)
+            saved = get_attempt(attempt_id, self._token())
+        except AuthenticationRequired:
+            self._require_user()
+            return
         except (SQLAlchemyError, OSError):
             logger.exception("Could not open saved attempt")
             self.error = "Could not open this result. Please try again."

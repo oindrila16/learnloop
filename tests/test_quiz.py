@@ -9,6 +9,7 @@ from dataclasses import replace
 
 from learnloop.questions import BANK, SUBJECTS, grade, validate_bank
 from learnloop.state import QuizState
+from support import authenticated_state, new_account
 from learnloop.database import initialize, make_engine
 
 
@@ -59,7 +60,8 @@ class FlowTests(unittest.TestCase):
         engine_patch = patch("learnloop.database.engine", db_engine)
         engine_patch.start()
         self.addCleanup(engine_patch.stop)
-        self.state = QuizState(_reflex_internal_init=True)
+        self.user_id, self.token = new_account()
+        self.state = authenticated_state(self.token)
         self.state.choose_subject("python")
         self.state.start()
 
@@ -82,7 +84,7 @@ class FlowTests(unittest.TestCase):
         for subject, questions in BANK.items():
             for mode, expected in (("correct", 10), ("incorrect", 0), ("partial", 4), ("empty", 0)):
                 with self.subTest(subject=subject, mode=mode):
-                    s = QuizState(_reflex_internal_init=True)
+                    s = authenticated_state(self.token)
                     s.choose_subject(subject)
                     s.start()
                     for index, q in enumerate(questions):
@@ -139,7 +141,7 @@ class FlowTests(unittest.TestCase):
 
     def test_all_unanswered_submission_and_session_isolation(self):
         s = self.state
-        other = QuizState(_reflex_internal_init=True)
+        other = authenticated_state(self.token)
         other.choose_subject("sql")
         other.start()
         for _ in range(9):

@@ -3,6 +3,9 @@
 import reflex as rx
 
 from .state import QuizState as Q
+from .auth import create_auth_api
+from .security import SessionBoundary
+from .settings import BACKEND_ORIGIN
 
 
 def subject_card(id: str, icon: str, title: str, description: str) -> rx.Component:
@@ -163,7 +166,7 @@ def subject_summary(item: rx.Var[dict[str, str]]) -> rx.Component:
 def progress() -> rx.Component:
     return rx.vstack(
         rx.heading("Your progress", as_="h1", size="7"),
-        rx.text("Local single-user version · All completed quizzes on this computer."),
+        rx.text("Your completed quizzes. Only you can view these results."),
         rx.cond(Q.loading,
             rx.text("Loading your saved quizzes…", role="status"),
             rx.cond(~Q.history_error,
@@ -201,7 +204,10 @@ def discard_dialog() -> rx.Component:
             rx.alert_dialog.description("Your unfinished answers will be discarded. Completed attempts stay saved."),
             rx.flex(
                 rx.alert_dialog.cancel(rx.button("Keep answering", variant="soft")),
-                rx.button("Discard and leave", on_click=Q.confirm_discard),
+                rx.cond(Q.logout_pending,
+                    logout_form("Discard and log out"),
+                    rx.button("Discard and leave", on_click=Q.confirm_discard),
+                ),
                 gap="12px", flex_wrap="wrap", margin_top="24px",
             ), max_width="440px", width="calc(100vw - 40px)",
         ),
@@ -218,6 +224,65 @@ def unavailable() -> rx.Component:
     )
 
 
+def logout_form(label: str) -> rx.Component:
+    # A native POST sets/deletes HttpOnly cookies without exposing them to JS.
+    return rx.el.form(
+        rx.button(label, type="submit", variant="soft", disabled=Q.saving | Q.loading),
+        action=BACKEND_ORIGIN + "/auth/logout", method="post",
+    )
+
+
+def account_form(action: str, password_autocomplete: str) -> rx.Component:
+    return rx.el.form(
+        rx.vstack(
+            rx.el.label("Username", html_for="username", font_weight="600"),
+            rx.el.input(id="username", name="username", required=True, min_length=3,
+                        max_length=30, pattern="[A-Za-z0-9_]{3,30}", auto_complete="username",
+                        class_name="account-input"),
+            rx.el.label("Password", html_for="password", font_weight="600"),
+            rx.el.input(id="password", name="password", type="password", required=True,
+                        min_length=15, max_length=128, auto_complete=password_autocomplete,
+                        class_name="account-input"),
+            rx.text("Username: 3–30 letters, numbers, or underscores. Usernames are not case-sensitive. Password: 15–128 characters.", size="2"),
+            rx.button("Create account" if action == "register" else "Log in", type="submit"),
+            align="start", spacing="3", width="100%",
+        ),
+        action=BACKEND_ORIGIN + "/auth/" + action, method="post", width="100%",
+    )
+
+
+def login_page() -> rx.Component:
+    return rx.vstack(
+        rx.heading("Log in", as_="h1", size="7"),
+        rx.text("Log in to keep your quizzes and results private."),
+        account_form("login", "current-password"),
+        rx.link("Need an account? Register", href="/register"),
+        spacing="5", align="start", width="100%",
+    )
+
+
+def register_page() -> rx.Component:
+    return rx.vstack(
+        rx.heading("Create an account", as_="h1", size="7"),
+        rx.text("Choose a username and a long password. There is no email or password recovery in this version."),
+        account_form("register", "new-password"),
+        rx.link("Already have an account? Log in", href="/login"),
+        spacing="5", align="start", width="100%",
+    )
+
+
+def page_content() -> rx.Component:
+    """Choose a screen with Reflex conditions, keeping the shared layout small."""
+    content = rx.cond((Q.stage == "results") & (Q.review.length() > 0), results(), unavailable())
+    content = rx.cond(Q.stage == "progress", progress(), content)
+    content = rx.cond(Q.stage == "confirm", confirmation(), content)
+    content = rx.cond(Q.stage == "quiz", quiz(), content)
+    content = rx.cond(Q.stage == "intro", intro(), content)
+    content = rx.cond(Q.stage == "home", home(), content)
+    content = rx.cond(Q.stage == "register", register_page(), content)
+    return rx.cond(Q.stage == "login", login_page(), content)
+
+
 def index() -> rx.Component:
     return rx.box(
         rx.link("Skip to content", href="#main-content", class_name="skip-link"),
@@ -228,11 +293,21 @@ def index() -> rx.Component:
                     rx.icon("book-open", size=24, color=rx.color("indigo", 9)),
                     rx.text("LearnLoop", weight="bold", size="5"), align="center", spacing="3",
                 ),
-                rx.badge("Local single-user version", variant="soft", margin_y="12px"),
+                rx.badge("Private learner history", variant="soft", margin_y="12px"),
                 rx.el.nav(
                     rx.flex(
                         rx.button("Home", on_click=Q.navigate("/"), variant="soft", disabled=Q.saving | Q.loading),
                         rx.button("Progress", on_click=Q.navigate("/progress"), variant="soft", disabled=Q.saving | Q.loading),
+                        rx.cond(Q.username != "",
+                            rx.fragment(
+                                rx.text("Signed in as ", Q.username),
+                                rx.cond((Q.stage == "quiz") | (Q.stage == "confirm"),
+                                    rx.button("Log out", on_click=Q.request_logout, variant="soft", disabled=Q.saving),
+                                    logout_form("Log out"),
+                                ),
+                            ),
+                            rx.fragment(rx.link("Log in", href="/login"), rx.link("Register", href="/register")),
+                        ),
                         gap="12px", flex_wrap="wrap",
                     ), aria_label="Main navigation",
                 ),
@@ -240,17 +315,7 @@ def index() -> rx.Component:
             ),
             rx.el.main(
                 rx.cond(Q.error != "", rx.el.p(Q.error, role="alert", color=rx.color("red", 11))),
-                rx.cond(Q.stage == "home", home(),
-                    rx.cond(Q.stage == "intro", intro(),
-                        rx.cond(Q.stage == "quiz", quiz(),
-                            rx.cond(Q.stage == "confirm", confirmation(),
-                                rx.cond(Q.stage == "progress", progress(),
-                                    rx.cond((Q.stage == "results") & (Q.review.length() > 0), results(), unavailable()),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
+                page_content(),
                 id="main-content", tab_index=-1,
                 max_width=rx.cond((Q.stage == "home") | (Q.stage == "progress"), "100%", "720px"),
                 margin_x="auto", width="100%",
@@ -263,8 +328,12 @@ def index() -> rx.Component:
     )
 
 
-app = rx.App(stylesheets=["/styles.css"])
-app.add_page(index, route="/", on_load=Q.home, title="LearnLoop | Learn at your own pace", description="Practice Python, SQL, and Computer Fundamentals.")
+app = rx.App(stylesheets=["/styles.css"], api_transformer=create_auth_api())
+app.add_middleware(SessionBoundary(), index=0)
+app.add_page(index, route="/", on_load=Q.load_home, title="LearnLoop | Learn at your own pace", description="Practice Python, SQL, and Computer Fundamentals.")
 app.add_page(index, route="/progress", on_load=Q.load_progress, title="Progress | LearnLoop")
 
 app.add_page(index, route="/results", on_load=Q.load_results, title="Results | LearnLoop")
+
+app.add_page(index, route="/login", on_load=Q.load_login, title="Log in | LearnLoop")
+app.add_page(index, route="/register", on_load=Q.load_register, title="Register | LearnLoop")

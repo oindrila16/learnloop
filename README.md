@@ -11,7 +11,9 @@ The Progress page shows your saved quizzes, average score and best score. You
 can also open your old results from there. The average is calculated from each
 completed quiz's percentage.
 
-This is a local single-user app. There are no accounts yet.
+You can register with a username and password. Each learner has their own private
+quiz history. There is no email verification or password recovery yet, so keep
+your password somewhere safe.
 
 ## What I used
 
@@ -19,6 +21,7 @@ This is a local single-user app. There are no accounts yet.
 - Reflex for the pages and app logic
 - SQLite and SQLModel to save quiz attempts
 - uv to manage packages
+- pwdlib with Argon2 for password hashing
 
 ## How to run
 
@@ -52,9 +55,29 @@ uv run python -m learnloop.database
 uv run reflex run
 ```
 
-Open http://localhost:3000 in your browser. The first run needs internet to
+Open http://localhost:3000 in your browser, then register or log in. Use
+`localhost` consistently rather than switching to `127.0.0.1`. The first run needs internet to
 download the required tools and packages. Keep the terminal running while using
 the app. Press Ctrl+C to stop it.
+
+If an older version is running, stop it before starting this one. Keep ports 3000
+and 8000 free; the login forms use these addresses. If you need different ports,
+set both public origins as explained in [AUTH.md](AUTH.md).
+
+## Updating an existing database
+
+Stop the app and back up `learnloop.db` first. Then run:
+
+```sh
+uv sync --locked
+uv run python -m learnloop.database
+uv run reflex run
+```
+
+The database command also runs the migration. It adds the account tables and an
+owner column without deleting quiz history. You can run it again safely. Quizzes
+saved before accounts were added stay unassigned. They are kept in the database,
+but aren't shown in anyone's private history.
 
 ## A few things to know
 
@@ -64,6 +87,8 @@ the app. Press Ctrl+C to stop it.
 - Home and Progress ask before you leave an unfinished quiz.
 - You can use Tab to move between controls and arrow keys to choose an answer.
 - Dates in the history are shown in UTC.
+- Login lasts up to eight hours. Logging out ends that session on the server.
+- Login attempts are limited. If you try too many times, wait up to 15 minutes.
 
 ## Saved data
 
@@ -91,3 +116,6 @@ uv run python -m unittest discover -s tests -v
 ```
 
 The tests use temporary databases, so they don't change your saved quizzes.
+
+See [AUTH.md](AUTH.md) for cookie settings, HTTPS setup, and the limits of this
+version. Login working locally doesn't make this ready for a public deployment.

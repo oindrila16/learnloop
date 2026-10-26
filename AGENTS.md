@@ -10,10 +10,14 @@
 - Keep generated files, secrets, databases, and virtual environments out of Git. Track `uv.lock`.
 - Use uv for dependencies and commands. Keep dependencies and file structure small.
 - Run relevant checks after each stage. Never claim a browser test passed unless it was actually performed.
-- Do not add accounts until a later requested stage.
+- Accounts are now part of the requested scope. Keep them to username/password login; do not add email services or social login.
 - Keep project writing natural, simple, and personal. The README should sound like the owner's own project notes, without inflated claims or invented experience.
-- This is a local single-user app: active quizzes are session-specific, but saved history is shared locally.
+- Each learner has private history. Derive identity from a validated server session, never a supplied user ID or display flag.
 - Initialize SQLite explicitly with `uv run python -m learnloop.database`. Never delete or recreate it automatically.
 - Save submissions and answer snapshots in one transaction; preserve the unique server-generated attempt ID when retrying failed saves.
 - Store submission timestamps in UTC and load historical reviews from saved snapshots, not the current question bank.
 - Persistence tests must use temporary databases and leave personal quiz history untouched.
+- Authorize every private read/write, including saved-result lookups and submission retries. Legacy attempts with no owner must remain unassigned.
+- Keep passwords out of Reflex state. Use native HTTP forms and HttpOnly session cookies; never log passwords or session tokens.
+- Clear cached private state before hydration and when the session changes, expires, or is revoked.
+- Preserve the non-destructive migration and run authentication/isolation tests when changing state or database access.
